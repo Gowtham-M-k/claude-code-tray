@@ -1003,10 +1003,7 @@ def notify(title: str, message: str, sound: bool):
             n.set_identityImage_(logo)
         if sound:
             n.setSoundName_(AppKit.NSUserNotificationDefaultSoundName)
-        center = AppKit.NSUserNotificationCenter.defaultUserNotificationCenter()
-        if center is None:
-            raise RuntimeError("NSUserNotificationCenter unavailable (macOS 14+)")
-        center.deliverNotification_(n)
+        AppKit.NSUserNotificationCenter.defaultUserNotificationCenter().deliverNotification_(n)
         sent = True
     except Exception as exc:
         print(f"[AgentWatch] AppKit notification error: {exc}", file=sys.stderr)
