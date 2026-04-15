@@ -15,7 +15,7 @@ A macOS menu bar indicator that shows whether **Claude Code** is actively workin
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USER/agentwatch/main/agentwatch/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Gowtham-M-k/claude-code-tray/main/agentwatch/install.sh | sh
 ```
 
 > Requires **macOS 12 Monterey or later** and **Python 3.9+**

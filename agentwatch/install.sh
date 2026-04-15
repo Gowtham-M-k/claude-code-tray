@@ -7,7 +7,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/YOUR_USER/agentwatch/main"
+REPO_RAW="https://raw.githubusercontent.com/Gowtham-M-k/claude-code-tray/main/agentwatch"
 INSTALL_DIR="$HOME/.agentwatch"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.agentwatch.plist"
 LOG="$HOME/.agentwatch.log"
