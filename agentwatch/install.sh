@@ -41,10 +41,15 @@ else
 fi
 
 if [ -z "$PYTHON" ]; then
-    echo "✗  python3 not found in common locations."
-    echo "   Install Python from https://python.org, then re-run with:"
-    echo "   PYTHON=/path/to/python3 curl -fsSL ... | sh"
-    exit 1
+    echo "  python3 not found — attempting to install via Homebrew..."
+    if command -v brew &>/dev/null; then
+        brew install python3 --quiet
+        PYTHON="$(brew --prefix)/bin/python3"
+    else
+        echo "✗  Homebrew not found either."
+        echo "   Install Python from https://python.org, then re-run."
+        exit 1
+    fi
 fi
 echo "→ Python: $("$PYTHON" --version)  ($PYTHON)"
 
