@@ -1047,17 +1047,56 @@ class AgentWatch(rumps.App):
         self._panel: Optional[AgentWatchPanel] = None
         self._panel_sig = None
 
+        # Live data menu items (updated by _update_menu)
+        self._mi_status   = rumps.MenuItem("● Stopped")
+        self._mi_status.set_callback(None)
+        self._mi_tin      = rumps.MenuItem("↑ Tokens In:  —")
+        self._mi_tin.set_callback(None)
+        self._mi_tout     = rumps.MenuItem("↓ Tokens Out: —")
+        self._mi_tout.set_callback(None)
+        self._mi_cost     = rumps.MenuItem("💰 Cost Today: —")
+        self._mi_cost.set_callback(None)
+        self._mi_cache    = rumps.MenuItem("⚡ Cache Hit:  —")
+        self._mi_cache.set_callback(None)
+        self._mi_agents   = rumps.MenuItem("🤖 Agents:     —")
+        self._mi_agents.set_callback(None)
+        self._mi_sessions = rumps.MenuItem("📋 Sessions:   —")
+        self._mi_sessions.set_callback(None)
+
         self.menu = [
-            rumps.MenuItem("Open AgentWatch", callback=self._toggle_panel),
+            self._mi_status,
             None,
-            rumps.MenuItem("Quit AgentWatch", callback=rumps.quit_application),
+            self._mi_tin,
+            self._mi_tout,
+            self._mi_cost,
+            self._mi_cache,
+            self._mi_agents,
+            self._mi_sessions,
+            None,
+            rumps.MenuItem("Check for Updates", callback=lambda _: self._start_update_check(manual=True)),
+            rumps.MenuItem("Restart",           callback=self._restart_app),
+            rumps.MenuItem("Claude Docs",       callback=self._open_docs),
+            None,
+            rumps.MenuItem("Quit AgentWatch",   callback=rumps.quit_application),
         ]
 
+        self._update_menu()
         threading.Thread(target=self._poll_loop, daemon=True).start()
 
     def _set_icon(self, nsimage):
         self._icon_nsimage = nsimage
         self._nsapp.setStatusBarIcon()
+
+    def _update_menu(self):
+        status_label = {"working": "● Working", "idle": "● Idle", "stopped": "● Stopped"}.get(self._status, "● Stopped")
+        m = self._metrics
+        self._mi_status.title   = status_label
+        self._mi_tin.title      = f"↑ Tokens In:  {format_compact(m.tokens_in_today)}  (all-time {format_compact(m.tokens_in)})"
+        self._mi_tout.title     = f"↓ Tokens Out: {format_compact(m.tokens_out_today)}  (all-time {format_compact(m.tokens_out)})"
+        self._mi_cost.title     = f"💰 Cost Today: {format_usd(m.cost_today)}  (all-time {format_usd(m.cost_all_time)})"
+        self._mi_cache.title    = f"⚡ Cache Hit:  {format_cache_rate(m.cache_read, m.tokens_in)}"
+        self._mi_agents.title   = f"🤖 Agents:     {self._active_agents} active"
+        self._mi_sessions.title = f"📋 Sessions:   {m.sessions_today} today  /  {m.sessions_total} total"
 
     def _ensure_panel(self):
         if self._panel is None:
@@ -1069,12 +1108,7 @@ class AgentWatch(rumps.App):
             )
 
     def _toggle_panel(self, _sender=None):
-        just_created = self._panel is None
         self._ensure_panel()
-        if just_created:
-            # Force an immediate data push so the panel isn't blank on first open
-            self._panel_sig = None
-            self._push_to_panel()
         self._panel.toggle()
 
     def _push_to_panel(self):
@@ -1149,6 +1183,7 @@ class AgentWatch(rumps.App):
                 self._last_static = status
                 self._anim_frame = 0
                 self._set_icon(make_icon(status))
+        self._update_menu()
         self._push_to_panel()
 
     def _start_update_check(self, manual=False):
