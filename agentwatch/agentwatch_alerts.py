@@ -1,5 +1,3 @@
-import time
-
 from agentwatch_core import (
     format_question_preview,
     format_session_title,
@@ -7,22 +5,14 @@ from agentwatch_core import (
     today_local,
 )
 
-_COOLDOWN_SEC = 60.0  # minimum seconds between identical notifications
-
-
 class AlertManager:
     def __init__(self, config: dict, notifier):
         self._config = config
         self._notifier = notifier
         self._last_budget_alert_day = None
-        self._last_sent: dict[str, float] = {}  # title → monotonic time
-
-    def _send(self, title: str, message: str, sound: bool) -> None:
-        now = time.monotonic()
-        if now - self._last_sent.get(title, 0.0) < _COOLDOWN_SEC:
-            return
-        self._last_sent[title] = now
-        self._notifier(title, message, sound)
+        # Timestamp of the latest user turn that triggered the last
+        # "task complete" notification.  Empty string means never fired.
+        self._last_notified_user_ts: str = ""
 
     def maybe_send_budget_alert(self, metrics):
         alerts = self._config["alerts"]
@@ -35,7 +25,7 @@ class AlertManager:
         today = today_local()
         if self._last_budget_alert_day != today and metrics.cost_today >= budget:
             self._last_budget_alert_day = today
-            self._send(
+            self._notifier(
                 "Daily budget exceeded",
                 (
                     f"Today's cost is {format_usd(metrics.cost_today)} "
@@ -58,18 +48,27 @@ class AlertManager:
             and current_status == "idle"
             and alerts.get("task_complete", True)
         ):
-            self._send(
-                f"Task complete — {format_session_title(metrics)}",
-                format_question_preview(metrics.latest_user_text, max_lines=2),
-                sound,
-            )
+            # Only fire if this is a genuinely new completed task — i.e. the
+            # latest user turn in the logs is newer than the last time we
+            # notified.  This prevents duplicate fires when:
+            #   • Claude pauses mid-task to ask yes/no (same user turn)
+            #   • The app restarts while Claude is already idle
+            #   • The working→idle transition is re-detected spuriously
+            current_ts = metrics.latest_user_timestamp or ""
+            if current_ts and current_ts > self._last_notified_user_ts:
+                self._last_notified_user_ts = current_ts
+                self._notifier(
+                    f"Task complete — {format_session_title(metrics)}",
+                    format_question_preview(metrics.latest_user_text, max_lines=2),
+                    sound,
+                )
 
         if (
             previous_status in {"working", "idle"}
             and current_status == "stopped"
             and alerts.get("agent_stopped", True)
         ):
-            self._send(
+            self._notifier(
                 "Agent stopped",
                 "Claude Code is no longer running on this machine.",
                 sound,

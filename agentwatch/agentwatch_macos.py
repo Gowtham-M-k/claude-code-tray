@@ -298,6 +298,10 @@ class AgentWatch(rumps.App):
         self._tokens_in_item.set_callback(None)
         self._tokens_out_item = rumps.MenuItem("Tokens out")
         self._tokens_out_item.set_callback(None)
+        self._tokens_in_total_item = rumps.MenuItem("Tokens in (total)")
+        self._tokens_in_total_item.set_callback(None)
+        self._tokens_out_total_item = rumps.MenuItem("Tokens out (total)")
+        self._tokens_out_total_item.set_callback(None)
         self._cache_item = rumps.MenuItem("Cache hit rate")
         self._cache_item.set_callback(None)
         self._cost_today_item = rumps.MenuItem("Cost today")
@@ -327,6 +331,10 @@ class AgentWatch(rumps.App):
             self._agents_item,
             self._tokens_in_item,
             self._tokens_out_item,
+            None,
+            make_header("Usage  —  All-time"),
+            self._tokens_in_total_item,
+            self._tokens_out_total_item,
             self._cache_item,
             None,
             make_header("Cost"),
@@ -365,6 +373,8 @@ class AgentWatch(rumps.App):
             self._metrics.has_data,
             self._metrics.tokens_in_today,
             self._metrics.tokens_out_today,
+            self._metrics.tokens_in,
+            self._metrics.tokens_out,
             self._metrics.cache_read,
             round(self._metrics.cost_today, 6),
             round(self._metrics.cost_all_time, 6),
@@ -430,6 +440,17 @@ class AgentWatch(rumps.App):
                 "Tokens out",
                 format_compact(self._metrics.tokens_out_today),
             )
+            _style_two_col(
+                self._tokens_in_total_item,
+                "Tokens in",
+                format_compact(self._metrics.tokens_in),
+                _green_color(),
+            )
+            _style_two_col(
+                self._tokens_out_total_item,
+                "Tokens out",
+                format_compact(self._metrics.tokens_out),
+            )
             cache_rate_str = format_cache_rate(self._metrics.cache_read, self._metrics.tokens_in)
             cache_color = _green_color() if self._metrics.cache_read > 0 else None
             _style_two_col(self._cache_item, "Cache hit rate", cache_rate_str, cache_color)
@@ -452,6 +473,8 @@ class AgentWatch(rumps.App):
         else:
             _style_two_col(self._tokens_in_item, "Tokens in", NO_DATA_LABEL)
             _style_two_col(self._tokens_out_item, "Tokens out", NO_DATA_LABEL)
+            _style_two_col(self._tokens_in_total_item, "Tokens in", NO_DATA_LABEL)
+            _style_two_col(self._tokens_out_total_item, "Tokens out", NO_DATA_LABEL)
             _style_two_col(self._cache_item, "Cache hit rate", NO_DATA_LABEL)
             _style_two_col(self._cost_today_item, "Cost today", NO_DATA_LABEL)
             _style_two_col(self._cost_all_time_item, "Cost all-time", NO_DATA_LABEL)
