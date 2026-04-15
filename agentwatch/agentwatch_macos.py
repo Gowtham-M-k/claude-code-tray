@@ -224,13 +224,28 @@ def make_header(title: str):
 def notify(title: str, message: str, sound: bool):
     sent = False
     try:
-        rumps.notification("AgentWatch", title, message)
+        import AppKit
+
+        notification = AppKit.NSUserNotification.alloc().init()
+        notification.setTitle_(title)
+        notification.setInformativeText_(message)
+
+        # set_identityImage_ places the icon in the app-icon slot (top-left)
+        logo = get_logo()
+        if logo:
+            notification.set_identityImage_(logo)
+
+        if sound:
+            notification.setSoundName_(AppKit.NSUserNotificationDefaultSoundName)
+
+        center = AppKit.NSUserNotificationCenter.defaultUserNotificationCenter()
+        center.deliverNotification_(notification)
         sent = True
     except Exception as exc:
-        print(f"[AgentWatch] rumps notification error: {exc}", file=sys.stderr)
+        print(f"[AgentWatch] AppKit notification error: {exc}", file=sys.stderr)
 
     if not sent:
-        # Fallback: osascript works without a bundled .app or notification permissions
+        # Fallback: osascript (no icon support, but always works as last resort)
         try:
             import subprocess
 
@@ -246,15 +261,10 @@ def notify(title: str, message: str, sound: bool):
                 capture_output=True,
             )
         except Exception as exc2:
-            print(f"[AgentWatch] osascript notification error: {exc2}", file=sys.stderr)
-
-    if sound:
-        try:
-            import AppKit
-
-            AppKit.NSBeep()
-        except Exception:
-            pass
+            print(
+                f"[AgentWatch] osascript notification error: {exc2}",
+                file=sys.stderr,
+            )
 
 
 class AgentWatch(rumps.App):
