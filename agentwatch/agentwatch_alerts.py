@@ -1,4 +1,9 @@
-from agentwatch_core import format_usd, today_local
+from agentwatch_core import (
+    format_question_preview,
+    format_session_title,
+    format_usd,
+    today_local,
+)
 
 
 class AlertManager:
@@ -29,7 +34,7 @@ class AlertManager:
         elif self._last_budget_alert_day and self._last_budget_alert_day != today:
             self._last_budget_alert_day = None
 
-    def handle_status_transition(self, previous_status: str, current_status: str):
+    def handle_status_transition(self, previous_status: str, current_status: str, metrics):
         if previous_status == current_status:
             return
 
@@ -42,8 +47,8 @@ class AlertManager:
             and alerts.get("task_complete", True)
         ):
             self._notifier(
-                "Task complete",
-                "Claude Code is idle and waiting for your input.",
+                f"Task complete — {format_session_title(metrics)}",
+                format_question_preview(metrics.latest_user_text, max_lines=2),
                 sound,
             )
 

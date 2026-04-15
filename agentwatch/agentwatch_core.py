@@ -63,6 +63,10 @@ class MetricsSnapshot:
     cost_all_time: float = 0.0
     last_tool: Optional[str] = None
     jsonl_files: int = 0
+    latest_session_slug: Optional[str] = None
+    latest_session_id: Optional[str] = None
+    latest_user_text: Optional[str] = None
+    latest_user_timestamp: str = ""
 
 
 def format_compact(value: int) -> str:
@@ -84,6 +88,56 @@ def format_cache_rate(read_tokens: int, input_tokens: int) -> str:
     if denom <= 0:
         return "0%"
     return f"{round((read_tokens / denom) * 100):d}%"
+
+
+def format_session_title(metrics: MetricsSnapshot) -> str:
+    if metrics.latest_session_slug:
+        return metrics.latest_session_slug
+    if metrics.latest_session_id:
+        return metrics.latest_session_id[:8]
+    return "Claude session"
+
+
+def format_question_preview(text: Optional[str], max_lines: int = 2, line_width: int = 72) -> str:
+    if not text:
+        return "Claude Code is idle and waiting for your input."
+
+    cleaned_lines = []
+    for raw_line in str(text).splitlines():
+        line = " ".join(raw_line.strip().split())
+        if line:
+            cleaned_lines.append(line)
+
+    if not cleaned_lines:
+        return "Claude Code is idle and waiting for your input."
+
+    preview_lines = []
+    truncated = False
+    for line in cleaned_lines:
+        while len(line) > line_width and len(preview_lines) < max_lines:
+            split_at = line.rfind(" ", 0, line_width + 1)
+            if split_at <= 0:
+                split_at = line_width
+            preview_lines.append(line[:split_at].rstrip())
+            line = line[split_at:].lstrip()
+            if len(preview_lines) >= max_lines and line:
+                truncated = True
+        if len(preview_lines) < max_lines and line:
+            preview_lines.append(line)
+        elif line:
+            truncated = True
+        if len(preview_lines) >= max_lines:
+            if line and len(preview_lines) >= max_lines:
+                truncated = True
+            break
+
+    if len(preview_lines) > max_lines:
+        preview_lines = preview_lines[:max_lines]
+    if truncated and preview_lines:
+        if not preview_lines[-1].endswith("..."):
+            preview_lines[-1] = preview_lines[-1][: max(0, line_width - 3)].rstrip() + "..."
+
+    return "\n".join(preview_lines[:max_lines])
 
 
 def make_summary(status: str, active_agents: int, metrics: MetricsSnapshot) -> str:
@@ -158,6 +212,52 @@ def extract_timestamp(record: dict) -> str:
         if isinstance(value, str) and value:
             return value
     return ""
+
+
+def extract_session_slug(record: dict) -> Optional[str]:
+    slug = record.get("slug")
+    if isinstance(slug, str) and slug:
+        return slug
+    return None
+
+
+def extract_session_id(record: dict) -> Optional[str]:
+    session_id = record.get("sessionId")
+    if isinstance(session_id, str) and session_id:
+        return session_id
+    return None
+
+
+def extract_user_text(record: dict) -> Optional[str]:
+    message = extract_message(record)
+    if not isinstance(message, dict):
+        return None
+    if message.get("role") != "user":
+        return None
+
+    content = message.get("content")
+    if isinstance(content, str):
+        text = content.strip()
+        return text or None
+
+    parts = []
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "text":
+                continue
+            text = block.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+
+    if parts:
+        return "\n".join(parts)
+
+    prompt = record.get("prompt")
+    if isinstance(prompt, str) and prompt.strip():
+        return prompt.strip()
+    return None
 
 
 def today_local() -> str:
@@ -263,6 +363,15 @@ def scan_metrics():
                                 name = str(block["name"])
                                 if timestamp >= latest_tool[0]:
                                     latest_tool = (timestamp, name)
+
+                    user_text = extract_user_text(record)
+                    if user_text:
+                        timestamp = extract_timestamp(record)
+                        if timestamp >= metrics.latest_user_timestamp:
+                            metrics.latest_user_timestamp = timestamp
+                            metrics.latest_user_text = user_text
+                            metrics.latest_session_slug = extract_session_slug(record)
+                            metrics.latest_session_id = extract_session_id(record)
         except (OSError, UnicodeDecodeError):
             continue
 

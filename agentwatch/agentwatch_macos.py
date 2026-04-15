@@ -227,6 +227,9 @@ class AgentWatch(rumps.App):
             round(self._metrics.cost_all_time, 6),
             self._metrics.last_tool,
             self._metrics.jsonl_files,
+            self._metrics.latest_session_slug,
+            self._metrics.latest_session_id,
+            self._metrics.latest_user_text,
             round(float(self._config["alerts"]["daily_budget_usd"]), 6),
         )
 
@@ -321,7 +324,11 @@ class AgentWatch(rumps.App):
 
                 self._alerts.maybe_send_budget_alert(self._metrics)
                 if status_changed and previous_status is not None:
-                    self._alerts.handle_status_transition(previous_status, self._status)
+                    self._alerts.handle_status_transition(
+                        previous_status,
+                        self._status,
+                        self._metrics,
+                    )
             except Exception as exc:
                 print(f"[AgentWatch] poll error: {exc}", file=sys.stderr)
 

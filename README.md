@@ -66,7 +66,7 @@ That keeps macOS working now while making the next Windows/Linux UI work increme
 
 Phase 3 adds native notifications for:
 
-- `working -> idle` task completion
+- `working -> idle` task completion, including the session slug in the title and a 2-line preview of the latest user request
 - unexpected stop after `working` or `idle`
 - daily budget exceeded
 
