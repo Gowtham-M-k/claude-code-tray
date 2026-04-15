@@ -593,8 +593,12 @@ class LeftPanel:
             self.view.addSubview_(card.view)
             self._cards[key] = card
 
-        # Select first card
-        first = metrics[0][0] if metrics else None
+        # Selection deferred — call init_selection() after RightPanel exists
+        self._deferred_first = metrics[0][0] if metrics else None
+
+    def init_selection(self):
+        """Call after RightPanel exists to select the initial card."""
+        first = getattr(self, "_deferred_first", None)
         if first:
             self._select(first)
 
@@ -918,6 +922,7 @@ class AgentWatchPanel:
         self._right = RightPanel(right_frame)
         content.addSubview_(self._left.view)
         content.addSubview_(self._right.view)
+        self._left.init_selection()
 
         # Divider
         div = AppKit.NSView.alloc().initWithFrame_(((LEFT_W, FOOTER_H), (1, PANEL_H - FOOTER_H)))
@@ -998,7 +1003,10 @@ def notify(title: str, message: str, sound: bool):
             n.set_identityImage_(logo)
         if sound:
             n.setSoundName_(AppKit.NSUserNotificationDefaultSoundName)
-        AppKit.NSUserNotificationCenter.defaultUserNotificationCenter().deliverNotification_(n)
+        center = AppKit.NSUserNotificationCenter.defaultUserNotificationCenter()
+        if center is None:
+            raise RuntimeError("NSUserNotificationCenter unavailable (macOS 14+)")
+        center.deliverNotification_(n)
         sent = True
     except Exception as exc:
         print(f"[AgentWatch] AppKit notification error: {exc}", file=sys.stderr)
