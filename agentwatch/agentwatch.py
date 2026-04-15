@@ -3,6 +3,9 @@
 import sys
 
 
+APP_ENTRYPOINT = "agentwatch.py"
+
+
 def main():
     if sys.platform == "darwin":
         from agentwatch_mac import main as mac_main

@@ -65,11 +65,13 @@ echo "→ Downloading AgentWatch to $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
 
 for file in \
+    VERSION \
     agentwatch.py \
     agentwatch_mac.py \
     agentwatch_macos.py \
     agentwatch_core.py \
     agentwatch_alerts.py \
+    agentwatch_updater.py \
     agentwatch.example.toml \
     claude-color.svg
 do

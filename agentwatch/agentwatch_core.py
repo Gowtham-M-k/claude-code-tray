@@ -24,16 +24,35 @@ CPU_SAMPLE_TIME = 0.1
 ANIM_INTERVAL = 0.12
 DEBOUNCE_COUNT = 3
 WORKING_HOLD_SEC = 4.0
+AUTO_UPDATE_INTERVAL_SEC = 86400.0
 
 CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 JSONL_GLOB = os.path.join(CLAUDE_PROJECTS_DIR, "**", "*.jsonl")
 CONFIG_PATH = os.path.expanduser("~/.agentwatch.toml")
 NO_DATA_LABEL = "No data yet"
+REPO_RAW = "https://raw.githubusercontent.com/Gowtham-M-k/claude-code-tray/main/agentwatch"
+VERSION_FILENAME = "VERSION"
+REMOTE_FILES = [
+    "VERSION",
+    "agentwatch.py",
+    "agentwatch_mac.py",
+    "agentwatch_macos.py",
+    "agentwatch_core.py",
+    "agentwatch_alerts.py",
+    "agentwatch_updater.py",
+    "agentwatch.example.toml",
+    "claude-color.svg",
+]
 
 DEFAULT_CONFIG = {
     "poll_interval": POLL_INTERVAL,
     "metrics_interval": METRICS_INTERVAL,
     "working_hold_sec": WORKING_HOLD_SEC,
+    "updates": {
+        "enabled": True,
+        "check_interval_sec": AUTO_UPDATE_INTERVAL_SEC,
+        "repo_raw": REPO_RAW,
+    },
     "alerts": {
         "task_complete": True,
         "agent_stopped": True,
@@ -88,6 +107,16 @@ def format_cache_rate(read_tokens: int, input_tokens: int) -> str:
     if denom <= 0:
         return "0%"
     return f"{round((read_tokens / denom) * 100):d}%"
+
+
+def get_version(version_dir: Optional[str] = None) -> str:
+    base_dir = version_dir or os.path.dirname(os.path.abspath(__file__))
+    version_path = os.path.join(base_dir, VERSION_FILENAME)
+    try:
+        with open(version_path, "r", encoding="utf-8") as handle:
+            return handle.read().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
 
 
 def format_session_title(metrics: MetricsSnapshot) -> str:

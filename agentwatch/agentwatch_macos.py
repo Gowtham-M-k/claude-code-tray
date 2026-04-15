@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 import rumps
 
@@ -16,16 +17,20 @@ from agentwatch_core import (
     METRICS_INTERVAL,
     NO_DATA_LABEL,
     POLL_INTERVAL,
+    REPO_RAW,
     STATE_LABEL,
+    VERSION_FILENAME,
     WORKING_HOLD_SEC,
     detect_process_state,
     format_cache_rate,
     format_compact,
     format_usd,
+    get_version,
     load_config,
     make_summary,
     scan_metrics,
 )
+from agentwatch_updater import apply_update, check_remote_version
 
 SVG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude-color.svg")
 
@@ -154,6 +159,10 @@ class AgentWatch(rumps.App):
         self._last_active_at = 0.0
         self._metrics = scan_metrics()
         self._last_menu_signature = None
+        self._current_version = get_version(os.path.dirname(os.path.abspath(sys.argv[0])))
+        self._remote_version = None
+        self._update_status = "Auto-update on"
+        self._update_lock = threading.Lock()
         self._lock = threading.Lock()
         self._alerts = AlertManager(self._config, notify)
         self._icon_nsimage = make_icon("stopped")
@@ -172,6 +181,10 @@ class AgentWatch(rumps.App):
         self._last_tool_item = rumps.MenuItem(f"🔧  Last tool: {NO_DATA_LABEL}")
         self._budget_item = rumps.MenuItem("🚨  Daily budget: $5.00")
         self._budget_item.set_callback(None)
+        self._version_item = rumps.MenuItem(f"🆕  Version: {self._current_version}")
+        self._version_item.set_callback(None)
+        self._update_item = rumps.MenuItem(self._update_status)
+        self._update_item.set_callback(None)
         self._files_item = rumps.MenuItem("📁  JSONL files: 0")
         self._files_item.set_callback(None)
         self._config_item = rumps.MenuItem(f"⚙️  Config: {CONFIG_PATH}")
@@ -198,9 +211,13 @@ class AgentWatch(rumps.App):
             None,
             make_header("Activity"),
             self._last_tool_item,
+            self._version_item,
+            self._update_item,
             self._files_item,
             self._config_item,
             self._source_item,
+            None,
+            rumps.MenuItem("Check for updates now", callback=self._manual_update_check),
             None,
             rumps.MenuItem("Restart AgentWatch", callback=self._restart_app),
             None,
@@ -231,6 +248,9 @@ class AgentWatch(rumps.App):
             self._metrics.latest_session_slug,
             self._metrics.latest_session_id,
             self._metrics.latest_user_text,
+            self._current_version,
+            self._remote_version,
+            self._update_status,
             round(float(self._config["alerts"]["daily_budget_usd"]), 6),
         )
 
@@ -246,6 +266,8 @@ class AgentWatch(rumps.App):
         )
         self._agents_item.title = f"⚡  Active agents: {self._active_agents}"
         self._files_item.title = f"📁  JSONL files: {self._metrics.jsonl_files}"
+        self._version_item.title = f"🆕  Version: {self._current_version}"
+        self._update_item.title = f"🔄  {self._update_status}"
         self._budget_item.title = (
             f"🚨  Daily budget: {format_usd(float(self._config['alerts']['daily_budget_usd']))}"
         )
@@ -279,8 +301,6 @@ class AgentWatch(rumps.App):
             self._last_tool_item.title = f"🔧  Last tool: {NO_DATA_LABEL}"
 
     def _poll_loop(self):
-        import time
-
         last_metrics_poll = 0.0
         while True:
             try:
@@ -335,6 +355,73 @@ class AgentWatch(rumps.App):
 
             time.sleep(float(self._config.get("poll_interval", POLL_INTERVAL)))
 
+    def _start_update_check(self, manual: bool = False):
+        if not self._config.get("updates", {}).get("enabled", True) and not manual:
+            return
+        thread = threading.Thread(
+            target=self._run_update_check,
+            kwargs={"manual": manual},
+            daemon=True,
+        )
+        thread.start()
+
+    def _run_update_check(self, manual: bool = False):
+        if not self._update_lock.acquire(blocking=False):
+            return
+        try:
+            repo_raw = str(self._config.get("updates", {}).get("repo_raw", REPO_RAW))
+            install_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            with self._lock:
+                self._update_status = "Checking for updates..."
+
+            remote_version = check_remote_version(repo_raw)
+            with self._lock:
+                self._remote_version = remote_version
+
+            if not remote_version:
+                with self._lock:
+                    self._update_status = "Update check failed"
+                return
+
+            if remote_version == self._current_version:
+                with self._lock:
+                    self._update_status = "Up to date"
+                if manual:
+                    notify("AgentWatch update", f"Already on {self._current_version}.", False)
+                return
+
+            with self._lock:
+                self._update_status = f"Updating to {remote_version}..."
+
+            result = apply_update(install_dir, repo_raw, self._current_version)
+            if result.error:
+                with self._lock:
+                    self._update_status = "Update failed"
+                notify("AgentWatch update failed", result.error, False)
+                return
+
+            if result.updated and result.version:
+                with self._lock:
+                    self._current_version = result.version
+                    self._remote_version = result.version
+                    self._update_status = f"Updated to {result.version}"
+                notify(
+                    "AgentWatch updated",
+                    f"Updated to {result.version}. Restarting AgentWatch.",
+                    False,
+                )
+                self._restart_app(None)
+        finally:
+            self._update_lock.release()
+
+    def _auto_update_loop(self):
+        interval = float(
+            self._config.get("updates", {}).get("check_interval_sec", 300.0)
+        )
+        while True:
+            time.sleep(max(30.0, interval))
+            self._start_update_check()
+
     @rumps.timer(ANIM_INTERVAL)
     def _anim_tick(self, _sender):
         with self._lock:
@@ -371,6 +458,12 @@ class AgentWatch(rumps.App):
             return
         rumps.quit_application()
 
+    def _manual_update_check(self, _sender):
+        self._start_update_check(manual=True)
+
 
 def main():
-    AgentWatch().run()
+    app = AgentWatch()
+    if app._config.get("updates", {}).get("enabled", True):
+        threading.Thread(target=app._auto_update_loop, daemon=True).start()
+    app.run()

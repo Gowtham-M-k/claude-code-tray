@@ -50,6 +50,15 @@ The tray menu now also scans `~/.claude/projects/**/*.jsonl` every 2 seconds and
 
 If no Claude JSONL logs exist yet, metric rows show `No data yet`.
 
+## Auto Update
+
+AgentWatch now checks for updates automatically once per day by default.
+
+- It compares the local `VERSION` file with the remote GitHub raw `VERSION`
+- If a newer version is available, it downloads the app files into the installed `~/.agentwatch/` directory
+- After a successful update, it restarts itself automatically
+- You can also trigger this manually from the tray menu with `Check for updates now`
+
 ## Phase 4 Foundation
 
 The repo is now split into reusable pieces instead of one large script:
@@ -77,6 +86,11 @@ poll_interval = 1.0
 metrics_interval = 2.0
 working_hold_sec = 4.0
 
+[updates]
+enabled = true
+check_interval_sec = 86400
+repo_raw = "https://raw.githubusercontent.com/Gowtham-M-k/claude-code-tray/main/agentwatch"
+
 [alerts]
 task_complete = true
 agent_stopped = true
@@ -98,6 +112,8 @@ agentwatch/
 ├── agentwatch_macos.py — macOS tray UI
 ├── agentwatch_core.py  — shared config, process, and JSONL logic
 ├── agentwatch_alerts.py — alert rules
+├── agentwatch_updater.py — remote version check + file updater
+├── VERSION            — local app version
 ├── agentwatch.example.toml — sample config
 ├── install.sh          — one-line installer
 └── claude-color.svg    — Claude icon
