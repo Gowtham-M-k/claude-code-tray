@@ -201,6 +201,8 @@ class AgentWatch(rumps.App):
             self._config_item,
             self._source_item,
             None,
+            rumps.MenuItem("Restart AgentWatch", callback=self._restart_app),
+            None,
             rumps.MenuItem("Open Claude Code docs", callback=self._open_docs),
             None,
             rumps.MenuItem("Quit AgentWatch", callback=rumps.quit_application),
@@ -345,6 +347,9 @@ class AgentWatch(rumps.App):
         import webbrowser
 
         webbrowser.open("https://docs.anthropic.com/en/docs/claude-code/overview")
+
+    def _restart_app(self, _sender):
+        os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def main():
