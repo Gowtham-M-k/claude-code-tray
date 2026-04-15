@@ -126,9 +126,75 @@ def make_icon(state: str, frame: int = 0):
     return canvas
 
 
+def _apply_attributed(item: rumps.MenuItem, title: str, attrs: dict):
+    import AppKit
+    attributed = AppKit.NSAttributedString.alloc().initWithString_attributes_(title, attrs)
+    item._menuitem.setAttributedTitle_(attributed)
+
+
+def _bold_white_attrs():
+    import AppKit
+    return {
+        AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor(),
+        AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(13.0),
+    }
+
+
+def _white_attrs():
+    import AppKit
+    return {AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
+
+
+def _dim_attrs():
+    import AppKit
+    return {
+        AppKit.NSForegroundColorAttributeName: AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(
+            0.55, 0.55, 0.55, 1.0
+        ),
+    }
+
+
+def _header_attrs():
+    import AppKit
+    return {
+        AppKit.NSForegroundColorAttributeName: AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(
+            0.45, 0.45, 0.45, 1.0
+        ),
+        AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(9.5),
+        AppKit.NSKernAttributeName: 1.5,
+    }
+
+
+def _utf16_len(s: str) -> int:
+    """Length of string in UTF-16 code units (what NSRange expects)."""
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _style_two_col(item: rumps.MenuItem, label: str, value: str):
+    """Dim gray label on left, white value on right."""
+    import AppKit
+    PAD = 28
+    text = f"{label:<{PAD}}{value}"
+    full_attrs = {
+        AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor(),
+        AppKit.NSFontAttributeName: AppKit.NSFont.menuFontOfSize_(0),
+    }
+    attributed = AppKit.NSMutableAttributedString.alloc().initWithString_attributes_(
+        text, full_attrs
+    )
+    dim_color = AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.55, 0.55, 0.55, 1.0)
+    label_utf16_len = _utf16_len(label)
+    label_range = AppKit.NSRange(0, label_utf16_len)
+    attributed.addAttribute_value_range_(
+        AppKit.NSForegroundColorAttributeName, dim_color, label_range
+    )
+    item._menuitem.setAttributedTitle_(attributed)
+
+
 def make_header(title: str):
-    item = rumps.MenuItem(title)
+    item = rumps.MenuItem(title.upper())
     item.set_callback(None)
+    _apply_attributed(item, title.upper(), _header_attrs())
     return item
 
 
@@ -238,8 +304,8 @@ class AgentWatch(rumps.App):
             self._status,
             self._active_agents,
             self._metrics.has_data,
-            self._metrics.tokens_in,
-            self._metrics.tokens_out,
+            self._metrics.tokens_in_today,
+            self._metrics.tokens_out_today,
             self._metrics.cache_read,
             round(self._metrics.cost_today, 6),
             round(self._metrics.cost_all_time, 6),
@@ -260,45 +326,76 @@ class AgentWatch(rumps.App):
             return
         self._last_menu_signature = signature
 
-        self._status_item.title = STATE_LABEL[self._status]
-        self._summary_item.title = make_summary(
-            self._status, self._active_agents, self._metrics
-        )
-        self._agents_item.title = f"⚡  Active agents: {self._active_agents}"
-        self._files_item.title = f"📁  JSONL files: {self._metrics.jsonl_files}"
-        self._version_item.title = f"🆕  Version: {self._current_version}"
-        self._update_item.title = f"🔄  {self._update_status}"
-        self._budget_item.title = (
-            f"🚨  Daily budget: {format_usd(float(self._config['alerts']['daily_budget_usd']))}"
+        # Status — bold white
+        status_text = STATE_LABEL[self._status]
+        self._status_item.title = status_text
+        _apply_attributed(self._status_item, status_text, _bold_white_attrs())
+
+        # Summary — dim gray
+        summary_text = make_summary(self._status, self._active_agents, self._metrics)
+        self._summary_item.title = summary_text
+        _apply_attributed(self._summary_item, summary_text, _dim_attrs())
+
+        # Agents — two-col
+        _style_two_col(self._agents_item, "⚡  Active agents", str(self._active_agents))
+
+        # Files / version / update / budget — two-col
+        _style_two_col(self._files_item, "📁  JSONL files", str(self._metrics.jsonl_files))
+        _style_two_col(self._version_item, "🆕  Version", self._current_version)
+        _style_two_col(self._update_item, "🔄  Update", self._update_status)
+        _style_two_col(
+            self._budget_item,
+            "🚨  Daily budget",
+            format_usd(float(self._config["alerts"]["daily_budget_usd"])),
         )
 
+        # Config / source — dim gray (path text, no value column)
+        config_text = f"⚙️  Config: {CONFIG_PATH}"
+        self._config_item.title = config_text
+        _apply_attributed(self._config_item, config_text, _dim_attrs())
+
+        source_text = f"📁  Source: {JSONL_GLOB}"
+        self._source_item.title = source_text
+        _apply_attributed(self._source_item, source_text, _dim_attrs())
+
         if self._metrics.has_data:
-            self._tokens_in_item.title = (
-                f"↑  Tokens in: {format_compact(self._metrics.tokens_in)}"
+            _style_two_col(
+                self._tokens_in_item,
+                "↑  Tokens in",
+                format_compact(self._metrics.tokens_in_today),
             )
-            self._tokens_out_item.title = (
-                f"↓  Tokens out: {format_compact(self._metrics.tokens_out)}"
+            _style_two_col(
+                self._tokens_out_item,
+                "↓  Tokens out",
+                format_compact(self._metrics.tokens_out_today),
             )
-            self._cache_item.title = (
-                "⚡  Cache hit rate: "
-                f"{format_cache_rate(self._metrics.cache_read, self._metrics.tokens_in)}"
+            _style_two_col(
+                self._cache_item,
+                "⚡  Cache hit rate",
+                format_cache_rate(self._metrics.cache_read, self._metrics.tokens_in),
             )
-            self._cost_today_item.title = (
-                f"💵  Cost today: {format_usd(self._metrics.cost_today)}"
+            _style_two_col(
+                self._cost_today_item,
+                "💵  Cost today",
+                format_usd(self._metrics.cost_today),
             )
-            self._cost_all_time_item.title = (
-                f"💰  Cost all-time: {format_usd(self._metrics.cost_all_time)}"
+            _style_two_col(
+                self._cost_all_time_item,
+                "💰  Cost all-time",
+                format_usd(self._metrics.cost_all_time),
             )
-            self._last_tool_item.title = (
-                f"🔧  Last tool: {self._metrics.last_tool or NO_DATA_LABEL}"
+            _style_two_col(
+                self._last_tool_item,
+                "🔧  Last tool",
+                self._metrics.last_tool or NO_DATA_LABEL,
             )
         else:
-            self._tokens_in_item.title = f"↑  Tokens in: {NO_DATA_LABEL}"
-            self._tokens_out_item.title = f"↓  Tokens out: {NO_DATA_LABEL}"
-            self._cache_item.title = f"⚡  Cache hit rate: {NO_DATA_LABEL}"
-            self._cost_today_item.title = f"💵  Cost today: {NO_DATA_LABEL}"
-            self._cost_all_time_item.title = f"💰  Cost all-time: {NO_DATA_LABEL}"
-            self._last_tool_item.title = f"🔧  Last tool: {NO_DATA_LABEL}"
+            _style_two_col(self._tokens_in_item, "↑  Tokens in", NO_DATA_LABEL)
+            _style_two_col(self._tokens_out_item, "↓  Tokens out", NO_DATA_LABEL)
+            _style_two_col(self._cache_item, "⚡  Cache hit rate", NO_DATA_LABEL)
+            _style_two_col(self._cost_today_item, "💵  Cost today", NO_DATA_LABEL)
+            _style_two_col(self._cost_all_time_item, "💰  Cost all-time", NO_DATA_LABEL)
+            _style_two_col(self._last_tool_item, "🔧  Last tool", NO_DATA_LABEL)
 
     def _poll_loop(self):
         last_metrics_poll = 0.0

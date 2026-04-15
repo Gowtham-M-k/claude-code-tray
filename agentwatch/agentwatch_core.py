@@ -77,6 +77,8 @@ class MetricsSnapshot:
     has_data: bool = False
     tokens_in: int = 0
     tokens_out: int = 0
+    tokens_in_today: int = 0
+    tokens_out_today: int = 0
     cache_read: int = 0
     cost_today: float = 0.0
     cost_all_time: float = 0.0
@@ -358,14 +360,20 @@ def scan_metrics():
                     except json.JSONDecodeError:
                         continue
 
+                    timestamp = extract_timestamp(record)
                     message = extract_message(record)
                     usage = message.get("usage") if isinstance(message, dict) else None
                     if isinstance(usage, dict):
-                        metrics.tokens_in += int(usage.get("input_tokens", 0) or 0)
-                        metrics.tokens_out += int(usage.get("output_tokens", 0) or 0)
+                        tin = int(usage.get("input_tokens", 0) or 0)
+                        tout = int(usage.get("output_tokens", 0) or 0)
+                        metrics.tokens_in += tin
+                        metrics.tokens_out += tout
                         metrics.cache_read += int(
                             usage.get("cache_read_input_tokens", 0) or 0
                         )
+                        if timestamp[:10] == today:
+                            metrics.tokens_in_today += tin
+                            metrics.tokens_out_today += tout
 
                     cost = first_present(
                         record,
@@ -377,7 +385,6 @@ def scan_metrics():
                     if isinstance(cost, (int, float)):
                         cost_value = float(cost)
                         metrics.cost_all_time += cost_value
-                        timestamp = extract_timestamp(record)
                         if timestamp[:10] == today:
                             metrics.cost_today += cost_value
 
@@ -388,14 +395,12 @@ def scan_metrics():
                                 and block.get("type") == "tool_use"
                                 and block.get("name")
                             ):
-                                timestamp = extract_timestamp(record)
                                 name = str(block["name"])
                                 if timestamp >= latest_tool[0]:
                                     latest_tool = (timestamp, name)
 
                     user_text = extract_user_text(record)
                     if user_text:
-                        timestamp = extract_timestamp(record)
                         if timestamp >= metrics.latest_user_timestamp:
                             metrics.latest_user_timestamp = timestamp
                             metrics.latest_user_text = user_text
