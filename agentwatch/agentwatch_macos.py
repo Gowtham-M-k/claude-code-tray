@@ -192,6 +192,17 @@ def _nsfont_mono(size):
     return AppKit.NSFont.monospacedDigitSystemFontOfSize_weight_(size, 0.0)
 
 
+def _set_btn_text_color(btn, title, font, color_tuple):
+    """Set NSButton title with a specific text color via NSAttributedString."""
+    import AppKit
+    attrs = {
+        AppKit.NSForegroundColorAttributeName: _nscolor(*color_tuple),
+        AppKit.NSFontAttributeName: font,
+    }
+    attr_str = AppKit.NSAttributedString.alloc().initWithString_attributes_(title, attrs)
+    btn.setAttributedTitle_(attr_str)
+
+
 def _textfield(frame, text, font, color, bg=False, align=0, editable=False, lines=1):
     import AppKit
     tf = AppKit.NSTextField.alloc().initWithFrame_(frame)
@@ -540,7 +551,6 @@ class LeftPanel:
             self._tab_btn_targets.append(tgt)
             import objc
             btn = AppKit.NSButton.alloc().initWithFrame_(((i * btn_w, 2), (btn_w - 2, TAB_H - 4)))
-            btn.setTitle_(tab_label)
             btn.setBezelStyle_(0)
             btn.setButtonType_(0)
             btn.setBordered_(False)
@@ -551,10 +561,10 @@ class LeftPanel:
             btn.setAction_(objc.selector(tgt.buttonClicked_, selector=b"buttonClicked:", signature=b"v@:@"))
             if active:
                 btn.layer().setBackgroundColor_(_cgcolor(*BG_CARD))
-                btn.setTextColor_(_nscolor(*TEXT_PRI))
+                _set_btn_text_color(btn, tab_label, _nsfont(11), TEXT_PRI)
             else:
                 btn.layer().setBackgroundColor_(_cgcolor(*BG_PANEL))
-                btn.setTextColor_(_nscolor(*TEXT_SEC))
+                _set_btn_text_color(btn, tab_label, _nsfont(11), TEXT_SEC)
             tab_bg.addSubview_(btn)
             self._tab_btns[tab_key] = btn
 
@@ -594,12 +604,13 @@ class LeftPanel:
         self._tab = tab_key
         import AppKit
         for k, btn in self._tab_btns.items():
+            label = btn.attributedTitle().string() if btn.attributedTitle() else btn.title()
             if k == tab_key:
                 btn.layer().setBackgroundColor_(_cgcolor(*BG_CARD))
-                btn.setTextColor_(_nscolor(*TEXT_PRI))
+                _set_btn_text_color(btn, label, _nsfont(11), TEXT_PRI)
             else:
                 btn.layer().setBackgroundColor_(_cgcolor(*BG_PANEL))
-                btn.setTextColor_(_nscolor(*TEXT_SEC))
+                _set_btn_text_color(btn, label, _nsfont(11), TEXT_SEC)
         fw = self.view.frame().size.width
         self._build_cards(fw)
 
@@ -929,13 +940,12 @@ class AgentWatchPanel:
             tgt = get_button_target_class().alloc().initWithCallback_(cb)
             self._btn_targets.append(tgt)
             btn = AppKit.NSButton.alloc().initWithFrame_(((i * btn_w, 1), (btn_w - 1, FOOTER_H - 2)))
-            btn.setTitle_(title)
             btn.setBezelStyle_(0)
             btn.setButtonType_(0)
             btn.setBordered_(False)
             btn.setFont_(_nsfont(10))
-            btn.setTextColor_(_nscolor(*TEXT_SEC))
             btn.setWantsLayer_(True)
+            _set_btn_text_color(btn, title, _nsfont(10), TEXT_SEC)
             btn.layer().setBackgroundColor_(_cgcolor(0.08, 0.08, 0.10))
             btn.setTarget_(tgt)
             btn.setAction_(objc.selector(tgt.buttonClicked_, selector=b"buttonClicked:", signature=b"v@:@"))
