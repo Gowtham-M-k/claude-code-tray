@@ -167,28 +167,44 @@ def _make_icon(state: str, frame: int = 0):
 # Process detection
 # ─────────────────────────────────────────────────────────────────────────────
 
-PROC_NAME_HINTS = ["claude"]
-CMDLINE_HINTS   = ["claude", "@anthropic-ai/claude-code", "claude-code"]
+# Match only the top-level Claude binary — not shells/scripts that happen to
+# mention "claude" somewhere in their arguments.
+CLAUDE_BINARY_NAMES = {"claude"}
+CLAUDE_CMDLINE_HINTS = ["@anthropic-ai/claude-code", "claude-code"]
 
 
-def _is_claude(proc: psutil.Process) -> bool:
+def _is_claude_root(proc: psutil.Process) -> bool:
+    """Return True only for the primary claude binary process."""
     try:
         name = (proc.name() or "").lower()
-        if any(h in name for h in PROC_NAME_HINTS):
+        # Direct binary match (e.g. name == "claude")
+        if name in CLAUDE_BINARY_NAMES:
             return True
-        cmd = " ".join(proc.cmdline() or []).lower()
-        return any(h in cmd for h in CMDLINE_HINTS)
+        # Fallback: first token of cmdline is the claude binary path
+        cmdline = proc.cmdline() or []
+        if cmdline:
+            exe = cmdline[0].lower()
+            if exe.endswith("/claude") or exe == "claude":
+                return True
+            # node-based install: argv contains a claude-code hint
+            full = " ".join(cmdline).lower()
+            if any(h in full for h in CLAUDE_CMDLINE_HINTS):
+                return True
+        return False
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
 
 
 def detect_status() -> str:
-    candidates = [p for p in psutil.process_iter() if _is_claude(p)]
+    # Collect all pids first to avoid repeated iteration
+    all_procs = list(psutil.process_iter(["pid", "name"]))
+    candidates = [p for p in all_procs if _is_claude_root(p)]
     if not candidates:
         return "stopped"
     for proc in candidates:
         try:
-            if proc.children(recursive=True):
+            children = proc.children(recursive=True)
+            if children:
                 return "working"
             if proc.cpu_percent(interval=CPU_SAMPLE_TIME) >= CPU_THRESHOLD:
                 return "working"
@@ -247,14 +263,20 @@ class AgentWatch(rumps.App):
             try:
                 raw = detect_status()
                 with self._lock:
-                    if raw == self._pending:
-                        self._pending_count += 1
+                    if raw == "working":
+                        # Switch to working immediately — no debounce
+                        self._status        = "working"
+                        self._pending       = "working"
+                        self._pending_count = DEBOUNCE_COUNT
                     else:
-                        self._pending       = raw
-                        self._pending_count = 1
-                    # Only commit when stable for DEBOUNCE_COUNT polls
-                    if self._pending_count >= DEBOUNCE_COUNT:
-                        self._status = self._pending
+                        # Debounce idle/stopped to prevent flicker
+                        if raw == self._pending:
+                            self._pending_count += 1
+                        else:
+                            self._pending       = raw
+                            self._pending_count = 1
+                        if self._pending_count >= DEBOUNCE_COUNT:
+                            self._status = self._pending
             except Exception as e:
                 print(f"[AgentWatch] poll error: {e}", file=sys.stderr)
             time.sleep(POLL_INTERVAL)
