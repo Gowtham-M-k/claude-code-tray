@@ -1,0 +1,10 @@
+poll_interval = 1.0
+metrics_interval = 2.0
+working_hold_sec = 4.0
+
+[alerts]
+task_complete = true
+agent_stopped = true
+daily_budget = true
+sound = true
+daily_budget_usd = 5.0

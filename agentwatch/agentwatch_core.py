@@ -1,0 +1,270 @@
+import glob
+import json
+import os
+import sys
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+import psutil
+
+try:
+    import tomllib
+except ImportError:
+    tomllib = None
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
+
+POLL_INTERVAL = 1.0
+METRICS_INTERVAL = 2.0
+CPU_THRESHOLD = 4.0
+CPU_SAMPLE_TIME = 0.1
+ANIM_INTERVAL = 0.12
+DEBOUNCE_COUNT = 3
+WORKING_HOLD_SEC = 4.0
+
+CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
+JSONL_GLOB = os.path.join(CLAUDE_PROJECTS_DIR, "**", "*.jsonl")
+CONFIG_PATH = os.path.expanduser("~/.agentwatch.toml")
+NO_DATA_LABEL = "No data yet"
+
+DEFAULT_CONFIG = {
+    "poll_interval": POLL_INTERVAL,
+    "metrics_interval": METRICS_INTERVAL,
+    "working_hold_sec": WORKING_HOLD_SEC,
+    "alerts": {
+        "task_complete": True,
+        "agent_stopped": True,
+        "daily_budget": True,
+        "sound": True,
+        "daily_budget_usd": 5.0,
+    },
+}
+
+STATE_LABEL = {
+    "working": "🟢  Working",
+    "idle": "🟡  Idle — waiting for input",
+    "stopped": "🔴  Not running",
+}
+
+CLAUDE_BINARY_NAMES = {"claude"}
+CLAUDE_CMDLINE_HINTS = ["@anthropic-ai/claude-code", "claude-code"]
+
+
+@dataclass
+class MetricsSnapshot:
+    has_data: bool = False
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cache_read: int = 0
+    cost_today: float = 0.0
+    cost_all_time: float = 0.0
+    last_tool: Optional[str] = None
+    jsonl_files: int = 0
+
+
+def format_compact(value: int) -> str:
+    if value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.1f}B"
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}k"
+    return str(value)
+
+
+def format_usd(value: float) -> str:
+    return f"${value:.2f}"
+
+
+def format_cache_rate(read_tokens: int, input_tokens: int) -> str:
+    denom = input_tokens + read_tokens
+    if denom <= 0:
+        return "0%"
+    return f"{round((read_tokens / denom) * 100):d}%"
+
+
+def make_summary(status: str, active_agents: int, metrics: MetricsSnapshot) -> str:
+    status_word = {
+        "working": "Running",
+        "idle": "Idle",
+        "stopped": "Stopped",
+    }[status]
+    agents = f"{active_agents} agent" + ("" if active_agents == 1 else "s")
+    if not metrics.has_data:
+        return f"{status_word} - {agents} - {NO_DATA_LABEL}"
+    return (
+        f"{status_word} - {agents} - "
+        f"↑{format_compact(metrics.tokens_in)} "
+        f"↓{format_compact(metrics.tokens_out)} - "
+        f"Cache {format_cache_rate(metrics.cache_read, metrics.tokens_in)}"
+    )
+
+
+def deep_merge(base, override):
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config():
+    config = deep_merge({}, DEFAULT_CONFIG)
+    if tomllib is None:
+        return config
+    try:
+        with open(CONFIG_PATH, "rb") as handle:
+            user_config = tomllib.load(handle)
+    except FileNotFoundError:
+        return config
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"[AgentWatch] config load error: {exc}", file=sys.stderr)
+        return config
+    if isinstance(user_config, dict):
+        return deep_merge(config, user_config)
+    return config
+
+
+def first_present(record: dict, *paths):
+    for path in paths:
+        node = record
+        found = True
+        for key in path:
+            if not isinstance(node, dict) or key not in node:
+                found = False
+                break
+            node = node[key]
+        if found:
+            return node
+    return None
+
+
+def extract_message(record: dict):
+    return first_present(record, ("message",), ("data", "message", "message"))
+
+
+def extract_timestamp(record: dict) -> str:
+    for path in (
+        ("timestamp",),
+        ("message", "timestamp"),
+        ("data", "message", "timestamp"),
+    ):
+        value = first_present(record, path)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def today_local() -> str:
+    return datetime.now().date().isoformat()
+
+
+def is_claude_root(proc: psutil.Process) -> bool:
+    try:
+        name = (proc.name() or "").lower()
+        if name in CLAUDE_BINARY_NAMES:
+            return True
+
+        cmdline = proc.cmdline() or []
+        if cmdline:
+            exe = cmdline[0].lower()
+            if exe.endswith("/claude") or exe == "claude":
+                return True
+            full = " ".join(cmdline).lower()
+            if any(hint in full for hint in CLAUDE_CMDLINE_HINTS):
+                return True
+        return False
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
+
+
+def detect_process_state():
+    all_procs = list(psutil.process_iter(["pid", "name"]))
+    candidates = [p for p in all_procs if is_claude_root(p)]
+    if not candidates:
+        return "stopped", 0
+
+    for proc in candidates:
+        try:
+            children = proc.children(recursive=True)
+            if children:
+                return "working", len(candidates)
+            if proc.cpu_percent(interval=CPU_SAMPLE_TIME) >= CPU_THRESHOLD:
+                return "working", len(candidates)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return "idle", len(candidates)
+
+
+def scan_metrics():
+    metrics = MetricsSnapshot()
+    latest_tool = ("", None)
+
+    try:
+        files = glob.glob(JSONL_GLOB, recursive=True)
+    except OSError:
+        files = []
+
+    metrics.jsonl_files = len(files)
+    if not files:
+        return metrics
+
+    metrics.has_data = True
+    today = today_local()
+
+    for path in files:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    message = extract_message(record)
+                    usage = message.get("usage") if isinstance(message, dict) else None
+                    if isinstance(usage, dict):
+                        metrics.tokens_in += int(usage.get("input_tokens", 0) or 0)
+                        metrics.tokens_out += int(usage.get("output_tokens", 0) or 0)
+                        metrics.cache_read += int(
+                            usage.get("cache_read_input_tokens", 0) or 0
+                        )
+
+                    cost = first_present(
+                        record,
+                        ("costUSD",),
+                        ("message", "costUSD"),
+                        ("data", "message", "costUSD"),
+                        ("data", "message", "message", "costUSD"),
+                    )
+                    if isinstance(cost, (int, float)):
+                        cost_value = float(cost)
+                        metrics.cost_all_time += cost_value
+                        timestamp = extract_timestamp(record)
+                        if timestamp[:10] == today:
+                            metrics.cost_today += cost_value
+
+                    if isinstance(message, dict):
+                        for block in message.get("content") or []:
+                            if (
+                                isinstance(block, dict)
+                                and block.get("type") == "tool_use"
+                                and block.get("name")
+                            ):
+                                timestamp = extract_timestamp(record)
+                                name = str(block["name"])
+                                if timestamp >= latest_tool[0]:
+                                    latest_tool = (timestamp, name)
+        except (OSError, UnicodeDecodeError):
+            continue
+
+    metrics.last_tool = latest_tool[1]
+    return metrics

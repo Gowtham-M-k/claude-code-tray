@@ -1,0 +1,59 @@
+from agentwatch_core import format_usd, today_local
+
+
+class AlertManager:
+    def __init__(self, config: dict, notifier):
+        self._config = config
+        self._notifier = notifier
+        self._last_budget_alert_day = None
+
+    def maybe_send_budget_alert(self, metrics):
+        alerts = self._config["alerts"]
+        if not alerts.get("daily_budget", True):
+            return
+        budget = float(alerts.get("daily_budget_usd", 5.0) or 0.0)
+        if budget <= 0:
+            return
+
+        today = today_local()
+        if self._last_budget_alert_day != today and metrics.cost_today >= budget:
+            self._last_budget_alert_day = today
+            self._notifier(
+                "Daily budget exceeded",
+                (
+                    f"Today's cost is {format_usd(metrics.cost_today)} "
+                    f"against a {format_usd(budget)} budget."
+                ),
+                bool(alerts.get("sound", True)),
+            )
+        elif self._last_budget_alert_day and self._last_budget_alert_day != today:
+            self._last_budget_alert_day = None
+
+    def handle_status_transition(self, previous_status: str, current_status: str):
+        if previous_status == current_status:
+            return
+
+        alerts = self._config["alerts"]
+        sound = bool(alerts.get("sound", True))
+
+        if (
+            previous_status == "working"
+            and current_status == "idle"
+            and alerts.get("task_complete", True)
+        ):
+            self._notifier(
+                "Task complete",
+                "Claude Code is idle and waiting for your input.",
+                sound,
+            )
+
+        if (
+            previous_status in {"working", "idle"}
+            and current_status == "stopped"
+            and alerts.get("agent_stopped", True)
+        ):
+            self._notifier(
+                "Agent stopped",
+                "Claude Code is no longer running on this machine.",
+                sound,
+            )

@@ -1,6 +1,6 @@
 # AgentWatch
 
-A macOS menu bar indicator that shows whether **Claude Code** is actively working or idle — at a glance, without switching windows.
+A tray utility for **Claude Code** with a working macOS app today and shared core modules that are ready to support future Windows/Linux frontends.
 
 <br>
 
@@ -21,23 +21,71 @@ curl -fsSL https://raw.githubusercontent.com/Gowtham-M-k/claude-code-tray/main/a
 > Requires **macOS 12 Monterey or later** and **Python 3.9+**
 
 The installer will:
-- Install Python dependencies (`rumps`, `psutil`)
+- Install Python dependencies (`rumps`, `psutil`, `pyobjc-framework-Quartz`, `tomli`)
 - Copy files to `~/.agentwatch/`
 - Register a **LaunchAgent** so it auto-starts at login
 
 ---
 
-## How It Works
+## What It Shows
 
-AgentWatch polls running processes every second:
+The tray icon still reflects live agent state:
 
-1. Finds any process whose name or command line contains `claude`
-2. Checks for **child processes** — Claude Code spawns shells when running tools → **Working**
-3. If no children, samples **CPU usage** — high CPU → **Working**
-4. Process found but nothing active → **Idle**
-5. No process found → **Stopped**
+1. Finds the top-level Claude Code process
+2. Checks for child processes and parent CPU activity
+3. Shows `working`, `idle`, or `stopped`
+4. Holds `working` briefly so short subprocess gaps do not flicker
 
-`working` is shown immediately, then held briefly after the last detected activity so short gaps between subprocesses do not flicker to idle. `idle` and `stopped` are still **debounced** (3 consecutive polls) to keep the indicator stable.
+The tray menu now also scans `~/.claude/projects/**/*.jsonl` every 2 seconds and shows:
+
+- Active Claude agents
+- A compact top-line summary with status, agent count, token totals, and cache rate
+- Total input tokens
+- Total output tokens
+- Cache hit rate
+- Cost today
+- Cost all-time
+- Last tool used
+- JSONL file count
+
+If no Claude JSONL logs exist yet, metric rows show `No data yet`.
+
+## Phase 4 Foundation
+
+The repo is now split into reusable pieces instead of one large script:
+
+- `agentwatch_core.py` for config, process scanning, JSONL parsing, formatting
+- `agentwatch_alerts.py` for alert rules and thresholds
+- `agentwatch_macos.py` for the macOS tray UI
+- `agentwatch.py` as the platform-aware entrypoint
+- `agentwatch_mac.py` as a backward-compatible macOS launcher
+
+That keeps macOS working now while making the next Windows/Linux UI work incremental instead of another rewrite.
+
+## Alerts And Config
+
+Phase 3 adds native notifications for:
+
+- `working -> idle` task completion
+- unexpected stop after `working` or `idle`
+- daily budget exceeded
+
+AgentWatch reads optional config from `~/.agentwatch.toml`.
+
+```toml
+poll_interval = 1.0
+metrics_interval = 2.0
+working_hold_sec = 4.0
+
+[alerts]
+task_complete = true
+agent_stopped = true
+daily_budget = true
+sound = true
+daily_budget_usd = 5.0
+```
+
+If the file does not exist, AgentWatch uses these defaults automatically.
 
 ---
 
@@ -45,8 +93,13 @@ AgentWatch polls running processes every second:
 
 ```
 agentwatch/
+├── agentwatch.py       — platform-aware entrypoint
+├── agentwatch_mac.py   — macOS compatibility launcher
+├── agentwatch_macos.py — macOS tray UI
+├── agentwatch_core.py  — shared config, process, and JSONL logic
+├── agentwatch_alerts.py — alert rules
+├── agentwatch.example.toml — sample config
 ├── install.sh          — one-line installer
-├── agentwatch_mac.py   — menu bar app
 └── claude-color.svg    — Claude icon
 ```
 

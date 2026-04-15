@@ -55,8 +55,8 @@ echo "→ Python: $("$PYTHON" --version)  ($PYTHON)"
 
 # ── 2. Dependencies ───────────────────────────────────────────────────────────
 echo ""
-echo "→ Installing dependencies (rumps, psutil, pyobjc-framework-Quartz)..."
-"$PYTHON" -m pip install --upgrade --quiet rumps psutil pyobjc-framework-Quartz
+echo "→ Installing dependencies (rumps, psutil, pyobjc-framework-Quartz, tomli)..."
+"$PYTHON" -m pip install --upgrade --quiet rumps psutil pyobjc-framework-Quartz tomli
 echo "  ✓ done"
 
 # ── 3. Download files ─────────────────────────────────────────────────────────
@@ -64,18 +64,28 @@ echo ""
 echo "→ Downloading AgentWatch to $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
 
-curl -fsSL "$REPO_RAW/agentwatch_mac.py" -o "$INSTALL_DIR/agentwatch_mac.py"
-curl -fsSL "$REPO_RAW/claude-color.svg"  -o "$INSTALL_DIR/claude-color.svg"
-chmod +x "$INSTALL_DIR/agentwatch_mac.py"
+for file in \
+    agentwatch.py \
+    agentwatch_mac.py \
+    agentwatch_macos.py \
+    agentwatch_core.py \
+    agentwatch_alerts.py \
+    agentwatch.example.toml \
+    claude-color.svg
+do
+    curl -fsSL "$REPO_RAW/$file" -o "$INSTALL_DIR/$file"
+done
+chmod +x "$INSTALL_DIR/agentwatch.py" "$INSTALL_DIR/agentwatch_mac.py"
 echo "  ✓ done"
 
 # ── 4. Stop any old instance ──────────────────────────────────────────────────
+pkill -f "agentwatch.py" 2>/dev/null || true
 pkill -f "agentwatch_mac.py" 2>/dev/null || true
 
 # ── 5. Smoke test ─────────────────────────────────────────────────────────────
 echo ""
 echo "→ Running smoke test (5 s)..."
-"$PYTHON" "$INSTALL_DIR/agentwatch_mac.py" &
+"$PYTHON" "$INSTALL_DIR/agentwatch.py" &
 SMOKE_PID=$!
 sleep 5
 if kill -0 $SMOKE_PID 2>/dev/null; then
@@ -83,7 +93,7 @@ if kill -0 $SMOKE_PID 2>/dev/null; then
     kill $SMOKE_PID 2>/dev/null || true
 else
     echo "  ✗ Process exited early — check output above"
-    echo "     Try manually: python3 $INSTALL_DIR/agentwatch_mac.py"
+    echo "     Try manually: python3 $INSTALL_DIR/agentwatch.py"
     exit 1
 fi
 
