@@ -66,6 +66,15 @@ echo "→ Registering LaunchAgent → $PLIST_PATH"
 mkdir -p "$HOME/Library/LaunchAgents"
 PYBIN="$("$PYTHON" -c 'import sys; print(sys.executable)')"
 
+# Create a launcher script named "agentwatch" so macOS shows that name
+# instead of "python3" in Background Activity / Login Items.
+LAUNCHER="$INSTALL_DIR/agentwatch"
+cat > "$LAUNCHER" <<LAUNCHER_SCRIPT
+#!/bin/bash
+exec -a agentwatch "${PYBIN}" "${INSTALL_DIR}/agentwatch_mac.py" "\$@"
+LAUNCHER_SCRIPT
+chmod +x "$LAUNCHER"
+
 cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -76,8 +85,7 @@ cat > "$PLIST_PATH" <<PLIST
     <string>com.agentwatch</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${PYBIN}</string>
-        <string>${INSTALL_DIR}/agentwatch_mac.py</string>
+        <string>${LAUNCHER}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
