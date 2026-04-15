@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="${PYTHON:-python3}"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.agentwatch.plist"
+INSTALL_DIR="$HOME/.agentwatch"
 LOG="$HOME/.agentwatch.log"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -20,12 +21,17 @@ echo "→ Installing dependencies (rumps + psutil)..."
 "$PYTHON" -m pip install --upgrade rumps psutil
 
 echo ""
+echo "→ Installing script to $INSTALL_DIR ..."
+mkdir -p "$INSTALL_DIR"
+cp "$SCRIPT_DIR/agentwatch_mac.py" "$INSTALL_DIR/agentwatch_mac.py"
+
+echo ""
 echo "→ Killing any old AgentWatch instance..."
 pkill -f "agentwatch_mac.py" 2>/dev/null || true
 
 echo ""
 echo "→ Test-launching AgentWatch (5 second smoke test)..."
-"$PYTHON" "$SCRIPT_DIR/agentwatch_mac.py" &
+"$PYTHON" "$INSTALL_DIR/agentwatch_mac.py" &
 SMOKE_PID=$!
 sleep 5
 if kill -0 $SMOKE_PID 2>/dev/null; then
@@ -52,7 +58,7 @@ cat > "$PLIST_PATH" <<PLIST
     <key>ProgramArguments</key>
     <array>
         <string>${PYBIN}</string>
-        <string>${SCRIPT_DIR}/agentwatch_mac.py</string>
+        <string>${INSTALL_DIR}/agentwatch_mac.py</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
