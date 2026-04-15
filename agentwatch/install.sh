@@ -11,8 +11,6 @@ REPO_RAW="https://raw.githubusercontent.com/Gowtham-M-k/claude-code-tray/main/ag
 INSTALL_DIR="$HOME/.agentwatch"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.agentwatch.plist"
 LOG="$HOME/.agentwatch.log"
-PYTHON="${PYTHON:-python3}"
-
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  AgentWatch — Claude Code menu bar indicator"
@@ -20,11 +18,34 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # ── 1. Python check ───────────────────────────────────────────────────────────
-if ! command -v "$PYTHON" &>/dev/null; then
-    echo "✗  python3 not found. Install from https://python.org and re-run."
+# If PYTHON is set explicitly, use that. Otherwise search common locations.
+if [ -n "${PYTHON:-}" ] && command -v "$PYTHON" &>/dev/null; then
+    : # use PYTHON as-is
+else
+    PYTHON=""
+    for candidate in \
+        /usr/local/bin/python3 \
+        /opt/homebrew/bin/python3 \
+        /usr/bin/python3 \
+        "$HOME/.pyenv/shims/python3" \
+        "$HOME/Library/Python/3.11/bin/python3" \
+        "$HOME/Library/Python/3.12/bin/python3" \
+        "$HOME/Library/Python/3.13/bin/python3"
+    do
+        if [ -x "$candidate" ]; then
+            PYTHON="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PYTHON" ]; then
+    echo "✗  python3 not found in common locations."
+    echo "   Install Python from https://python.org, then re-run with:"
+    echo "   PYTHON=/path/to/python3 curl -fsSL ... | sh"
     exit 1
 fi
-echo "→ Python: $("$PYTHON" --version)  ($("$PYTHON" -c 'import sys; print(sys.executable)'))"
+echo "→ Python: $("$PYTHON" --version)  ($PYTHON)"
 
 # ── 2. Dependencies ───────────────────────────────────────────────────────────
 echo ""
