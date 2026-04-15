@@ -1003,7 +1003,10 @@ def notify(title: str, message: str, sound: bool):
             n.set_identityImage_(logo)
         if sound:
             n.setSoundName_(AppKit.NSUserNotificationDefaultSoundName)
-        AppKit.NSUserNotificationCenter.defaultUserNotificationCenter().deliverNotification_(n)
+        center = AppKit.NSUserNotificationCenter.defaultUserNotificationCenter()
+        if center is None:
+            raise RuntimeError("NSUserNotificationCenter unavailable (macOS 14+)")
+        center.deliverNotification_(n)
         sent = True
     except Exception as exc:
         print(f"[AgentWatch] AppKit notification error: {exc}", file=sys.stderr)
@@ -1066,7 +1069,12 @@ class AgentWatch(rumps.App):
             )
 
     def _toggle_panel(self, _sender=None):
+        just_created = self._panel is None
         self._ensure_panel()
+        if just_created:
+            # Force an immediate data push so the panel isn't blank on first open
+            self._panel_sig = None
+            self._push_to_panel()
         self._panel.toggle()
 
     def _push_to_panel(self):
