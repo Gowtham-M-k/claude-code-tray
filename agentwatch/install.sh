@@ -55,8 +55,8 @@ echo "→ Python: $("$PYTHON" --version)  ($PYTHON)"
 
 # ── 2. Dependencies ───────────────────────────────────────────────────────────
 echo ""
-echo "→ Installing dependencies (rumps, psutil)..."
-"$PYTHON" -m pip install --upgrade --quiet rumps psutil
+echo "→ Installing dependencies (rumps, psutil, pyobjc-framework-Quartz)..."
+"$PYTHON" -m pip install --upgrade --quiet rumps psutil pyobjc-framework-Quartz
 echo "  ✓ done"
 
 # ── 3. Download files ─────────────────────────────────────────────────────────
