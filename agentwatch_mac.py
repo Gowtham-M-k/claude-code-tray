@@ -14,6 +14,13 @@ States shown in the menu bar:
 import sys
 import threading
 
+# Hide from Dock and App Switcher — must happen before rumps/AppKit initialises
+try:
+    import AppKit
+    AppKit.NSBundle.mainBundle().infoDictionary()["LSUIElement"] = "1"
+except Exception:
+    pass
+
 # ── dependency check ──────────────────────────────────────────────────────────
 _MISSING = []
 try:
@@ -32,25 +39,24 @@ if _MISSING:
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────────────────────
-POLL_INTERVAL   = 2.0   # seconds
+POLL_INTERVAL   = 1.0   # seconds
 CPU_THRESHOLD   = 4.0   # % CPU that counts as "working"
-CPU_SAMPLE_TIME = 0.3   # seconds to sample CPU
+CPU_SAMPLE_TIME = 0.1   # seconds to sample CPU
 
 PROC_NAME_HINTS = ["claude"]
 CMDLINE_HINTS   = ["claude", "@anthropic-ai/claude-code", "claude-code"]
 
 # Menu bar text for each state
-# macOS menu bar renders plain text — emoji work great here
 STATE_TITLE = {
-    "working": "⚙ Claude",
-    "idle":    "● Claude",
-    "stopped": "○ Claude",
+    "working": "🟢 Claude",
+    "idle":    "🟡 Claude",
+    "stopped": "🔴 Claude",
 }
 
 STATE_LABEL = {
-    "working": "⚙  Working — tool in progress",
-    "idle":    "●  Idle — waiting for input",
-    "stopped": "○  Not running",
+    "working": "🟢  Working",
+    "idle":    "🟡  Idle — waiting for input",
+    "stopped": "🔴  Not running",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -99,7 +105,7 @@ class AgentWatch(rumps.App):
 
         # Status label (top of menu, non-clickable)
         self._status_item = rumps.MenuItem(STATE_LABEL["stopped"])
-        self._status_item.set_callback(None)   # non-clickable
+        self._status_item.set_callback(None)  # non-clickable
 
         self.menu = [
             self._status_item,
@@ -124,7 +130,7 @@ class AgentWatch(rumps.App):
                 print(f"[AgentWatch] poll error: {e}", file=sys.stderr)
             time.sleep(POLL_INTERVAL)
 
-    @rumps.timer(2)   # belt-and-suspenders: rumps timer fires on main thread
+    @rumps.timer(1)   # belt-and-suspenders: rumps timer fires on main thread
     def _timer_tick(self, _sender):
         pass  # actual work done in thread; this keeps runloop alive
 
