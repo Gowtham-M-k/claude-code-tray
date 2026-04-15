@@ -1,5 +1,6 @@
 import math
 import os
+import subprocess
 import sys
 import threading
 
@@ -356,7 +357,19 @@ class AgentWatch(rumps.App):
         webbrowser.open("https://docs.anthropic.com/en/docs/claude-code/overview")
 
     def _restart_app(self, _sender):
-        os.execv(sys.executable, [sys.executable, *sys.argv])
+        script_path = os.path.abspath(sys.argv[0])
+        argv = [sys.executable, script_path, *sys.argv[1:]]
+        workdir = os.path.dirname(script_path)
+        try:
+            subprocess.Popen(
+                argv,
+                cwd=workdir,
+                start_new_session=True,
+            )
+        except Exception as exc:
+            print(f"[AgentWatch] restart error: {exc}", file=sys.stderr)
+            return
+        rumps.quit_application()
 
 
 def main():
