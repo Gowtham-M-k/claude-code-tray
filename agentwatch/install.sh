@@ -26,13 +26,14 @@ else
     for candidate in \
         /usr/local/bin/python3 \
         /opt/homebrew/bin/python3 \
-        /usr/bin/python3 \
         "$HOME/.pyenv/shims/python3" \
-        "$HOME/Library/Python/3.11/bin/python3" \
+        "$HOME/Library/Python/3.13/bin/python3" \
         "$HOME/Library/Python/3.12/bin/python3" \
-        "$HOME/Library/Python/3.13/bin/python3"
+        "$HOME/Library/Python/3.11/bin/python3" \
+        /usr/bin/python3
     do
-        if [ -x "$candidate" ]; then
+        # Skip the Xcode stub — it's executable but not a real Python
+        if [ -x "$candidate" ] && "$candidate" -c "import sys; sys.exit(0)" 2>/dev/null; then
             PYTHON="$candidate"
             break
         fi
