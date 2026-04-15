@@ -37,7 +37,7 @@ AgentWatch polls running processes every second:
 4. Process found but nothing active → **Idle**
 5. No process found → **Stopped**
 
-Status changes are **debounced** (3 consecutive polls must agree) to prevent flickering.
+`working` is shown immediately, then held briefly after the last detected activity so short gaps between subprocesses do not flicker to idle. `idle` and `stopped` are still **debounced** (3 consecutive polls) to keep the indicator stable.
 
 ---
 

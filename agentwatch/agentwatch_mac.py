@@ -45,6 +45,7 @@ CPU_THRESHOLD    = 4.0    # % CPU that counts as "working"
 CPU_SAMPLE_TIME  = 0.1    # seconds to sample CPU
 ANIM_INTERVAL    = 0.12   # seconds between animation frames
 DEBOUNCE_COUNT   = 3      # polls a status must be stable before switching
+WORKING_HOLD_SEC = 4.0    # keep "working" briefly after last detected activity
 
 # Path to the Claude SVG logo (same directory as this script)
 SVG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude-color.svg")
@@ -229,6 +230,7 @@ class AgentWatch(rumps.App):
         self._pending       = "stopped"   # candidate status before debounce
         self._pending_count = 0           # consecutive polls with same candidate
         self._anim_frame    = 0
+        self._last_active_at = 0.0
         self._lock          = threading.Lock()
         # Pre-render initial icon; applied on first _anim_tick
         # (_nsapp not available until run(), so can't call _set_icon here)
@@ -262,13 +264,21 @@ class AgentWatch(rumps.App):
         while True:
             try:
                 raw = detect_status()
+                now = time.monotonic()
                 with self._lock:
                     if raw == "working":
                         # Switch to working immediately — no debounce
                         self._status        = "working"
                         self._pending       = "working"
                         self._pending_count = DEBOUNCE_COUNT
+                        self._last_active_at = now
                     else:
+                        # Keep "working" through brief gaps between subprocesses
+                        if (
+                            self._status == "working"
+                            and now - self._last_active_at < WORKING_HOLD_SEC
+                        ):
+                            continue
                         # Debounce idle/stopped to prevent flicker
                         if raw == self._pending:
                             self._pending_count += 1
