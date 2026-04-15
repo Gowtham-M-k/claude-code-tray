@@ -24,6 +24,7 @@ echo ""
 echo "→ Installing script to $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
 cp "$SCRIPT_DIR/agentwatch_mac.py" "$INSTALL_DIR/agentwatch_mac.py"
+cp "$SCRIPT_DIR/claude-color.svg"  "$INSTALL_DIR/claude-color.svg"
 
 echo ""
 echo "→ Killing any old AgentWatch instance..."
