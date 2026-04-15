@@ -88,6 +88,32 @@ class MetricsSnapshot:
     latest_session_id: Optional[str] = None
     latest_user_text: Optional[str] = None
     latest_user_timestamp: str = ""
+    # Per-day history (last 14 days, oldest first) for sparklines
+    tokens_in_history: list = None   # list of int
+    tokens_out_history: list = None  # list of int
+    cost_history: list = None        # list of float
+    sessions_history: list = None    # list of int (sessions per day)
+    # Weekly aggregates
+    tokens_in_this_week: int = 0
+    tokens_out_this_week: int = 0
+    cost_this_week: float = 0.0
+    sessions_today: int = 0
+    sessions_total: int = 0
+    sessions_this_week: int = 0
+    # Recent tool actions (list of (timestamp_str, tool_name))
+    recent_actions: list = None      # list of (ts, name)
+
+    def __post_init__(self):
+        if self.tokens_in_history is None:
+            self.tokens_in_history = []
+        if self.tokens_out_history is None:
+            self.tokens_out_history = []
+        if self.cost_history is None:
+            self.cost_history = []
+        if self.sessions_history is None:
+            self.sessions_history = []
+        if self.recent_actions is None:
+            self.recent_actions = []
 
 
 def format_compact(value: int) -> str:
@@ -331,9 +357,17 @@ def detect_process_state():
     return "idle", len(candidates)
 
 
+def _date_range(days: int) -> list:
+    """Return list of ISO date strings for the last `days` days, oldest first."""
+    from datetime import timedelta
+    today = datetime.now().date()
+    return [(today - timedelta(days=days - 1 - i)).isoformat() for i in range(days)]
+
+
 def scan_metrics():
     metrics = MetricsSnapshot()
     latest_tool = ("", None)
+    all_tool_actions = []  # list of (timestamp, tool_name)
 
     try:
         files = glob.glob(JSONL_GLOB, recursive=True)
@@ -346,6 +380,21 @@ def scan_metrics():
 
     metrics.has_data = True
     today = today_local()
+
+    # Per-day accumulators for history (14 days)
+    HISTORY_DAYS = 14
+    day_labels = _date_range(HISTORY_DAYS)
+    day_set = set(day_labels)
+
+    from datetime import date as _date, timedelta as _td
+    today_date = _date.today()
+    week_start = (today_date - _td(days=today_date.weekday())).isoformat()
+
+    # day -> {tokens_in, tokens_out, cost, sessions}
+    per_day: dict = {d: {"tokens_in": 0, "tokens_out": 0, "cost": 0.0, "sessions": set()} for d in day_labels}
+
+    # sessions per day (all-time count)
+    all_sessions: dict = {}  # date -> set of session ids
 
     for path in files:
         try:
@@ -360,19 +409,27 @@ def scan_metrics():
                         continue
 
                     timestamp = extract_timestamp(record)
+                    day = timestamp[:10] if timestamp else ""
                     message = extract_message(record)
+                    session_id = extract_session_id(record) or extract_session_slug(record)
+
                     usage = message.get("usage") if isinstance(message, dict) else None
                     if isinstance(usage, dict):
                         tin = int(usage.get("input_tokens", 0) or 0)
                         tout = int(usage.get("output_tokens", 0) or 0)
+                        cr = int(usage.get("cache_read_input_tokens", 0) or 0)
                         metrics.tokens_in += tin
                         metrics.tokens_out += tout
-                        metrics.cache_read += int(
-                            usage.get("cache_read_input_tokens", 0) or 0
-                        )
-                        if timestamp[:10] == today:
+                        metrics.cache_read += cr
+                        if day == today:
                             metrics.tokens_in_today += tin
                             metrics.tokens_out_today += tout
+                        if day >= week_start:
+                            metrics.tokens_in_this_week += tin
+                            metrics.tokens_out_this_week += tout
+                        if day in day_set:
+                            per_day[day]["tokens_in"] += tin
+                            per_day[day]["tokens_out"] += tout
 
                     cost = first_present(
                         record,
@@ -384,8 +441,12 @@ def scan_metrics():
                     if isinstance(cost, (int, float)):
                         cost_value = float(cost)
                         metrics.cost_all_time += cost_value
-                        if timestamp[:10] == today:
+                        if day == today:
                             metrics.cost_today += cost_value
+                        if day >= week_start:
+                            metrics.cost_this_week += cost_value
+                        if day in day_set:
+                            per_day[day]["cost"] += cost_value
 
                     if isinstance(message, dict):
                         for block in message.get("content") or []:
@@ -395,6 +456,7 @@ def scan_metrics():
                                 and block.get("name")
                             ):
                                 name = str(block["name"])
+                                all_tool_actions.append((timestamp, name))
                                 if timestamp >= latest_tool[0]:
                                     latest_tool = (timestamp, name)
 
@@ -405,8 +467,35 @@ def scan_metrics():
                             metrics.latest_user_text = user_text
                             metrics.latest_session_slug = extract_session_slug(record)
                             metrics.latest_session_id = extract_session_id(record)
+
+                    # Session tracking
+                    if session_id and day:
+                        if day not in all_sessions:
+                            all_sessions[day] = set()
+                        all_sessions[day].add(session_id)
+                        if day in day_set:
+                            per_day[day]["sessions"].add(session_id)
+
         except (OSError, UnicodeDecodeError):
             continue
 
     metrics.last_tool = latest_tool[1]
+
+    # Populate history arrays (oldest to newest)
+    metrics.tokens_in_history = [per_day[d]["tokens_in"] for d in day_labels]
+    metrics.tokens_out_history = [per_day[d]["tokens_out"] for d in day_labels]
+    metrics.cost_history = [per_day[d]["cost"] for d in day_labels]
+    metrics.sessions_history = [len(per_day[d]["sessions"]) for d in day_labels]
+
+    # Session counts
+    metrics.sessions_today = len(all_sessions.get(today, set()))
+    metrics.sessions_total = sum(len(v) for v in all_sessions.values())
+    metrics.sessions_this_week = sum(
+        len(v) for k, v in all_sessions.items() if k >= week_start
+    )
+
+    # Recent actions: last 10, newest first
+    all_tool_actions.sort(key=lambda x: x[0], reverse=True)
+    metrics.recent_actions = all_tool_actions[:10]
+
     return metrics
