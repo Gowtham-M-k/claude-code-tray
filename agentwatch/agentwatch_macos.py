@@ -222,10 +222,32 @@ def make_header(title: str):
 
 
 def notify(title: str, message: str, sound: bool):
+    sent = False
     try:
         rumps.notification("AgentWatch", title, message)
+        sent = True
     except Exception as exc:
-        print(f"[AgentWatch] notification error: {exc}", file=sys.stderr)
+        print(f"[AgentWatch] rumps notification error: {exc}", file=sys.stderr)
+
+    if not sent:
+        # Fallback: osascript works without a bundled .app or notification permissions
+        try:
+            import subprocess
+
+            safe_title = title.replace("\\", "\\\\").replace('"', '\\"')
+            safe_msg = message.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'display notification "{safe_msg}" with title "{safe_title}"',
+                ],
+                check=False,
+                capture_output=True,
+            )
+        except Exception as exc2:
+            print(f"[AgentWatch] osascript notification error: {exc2}", file=sys.stderr)
+
     if sound:
         try:
             import AppKit
