@@ -177,14 +177,13 @@ def make_summary(status: str, active_agents: int, metrics: MetricsSnapshot) -> s
         "idle": "Idle",
         "stopped": "Stopped",
     }[status]
-    agents = f"{active_agents} agent" + ("" if active_agents == 1 else "s")
     if not metrics.has_data:
-        return f"{status_word} - {agents} - {NO_DATA_LABEL}"
+        return f"{status_word}  ·  No data yet"
+    agents = f"{active_agents} active" if active_agents > 0 else "No agents"
     return (
-        f"{status_word} - {agents} - "
-        f"↑{format_compact(metrics.tokens_in)} "
-        f"↓{format_compact(metrics.tokens_out)} - "
-        f"Cache {format_cache_rate(metrics.cache_read, metrics.tokens_in)}"
+        f"{status_word}  ·  {agents}  ·  "
+        f"↑{format_compact(metrics.tokens_in_today)} "
+        f"↓{format_compact(metrics.tokens_out_today)}"
     )
 
 
